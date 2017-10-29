@@ -2,10 +2,9 @@
 
 
 import pymysql
-import requests
 import sys
 
-from urllib.parse import urlencode
+from threading import Thread
 
 from thrift.transport import TSocket
 from thrift.server import TServer
@@ -29,11 +28,10 @@ class ChatServiceHandler(ChatService.Iface):
     def messagePost(self, chatMessage):
         user = chatMessage.name
         msg = chatMessage.message
-        payload = {'user': user, 'msg': msg}
-        payload = urlencode(payload)
-        res = requests.get('http://140.114.77.33/msg.php', params=payload)
-        if res.status_code != 200:
-            print(res.text)
+        timestamp = chatMessage.timestamp
+        with self._dbh.cursor() as cursor:
+            sql = 'INSERT INTO messages(user, msg, timestamp) VALUES (%s, %s, %s)'
+            cursor.execute(sql, (user, msg, timestamp))
 
     def messageGet(self, timestamp):
         messages = []
@@ -68,6 +66,7 @@ def prepare_mysql_connection():
         password='meichu13579meichu',
         db='meichu',
         charset='utf8',
+        autocommit=True,
         cursorclass=pymysql.cursors.DictCursor
     )
     return dbh
@@ -90,12 +89,15 @@ def start_user_service(dbh, port):
 
 
 def main():
-    print('Port info: chat: {}, user: {}'.format(9876, 9877))
+    print('Port info: chat: {}, user: {}'.format(9876, 9999))
     portchat = 9876
-    portuser = 9877
-    dbh = prepare_mysql_connection()
-    start_chat_service(dbh, portchat)
-    start_user_service(dbh, portuser)
+    portuser = 9999
+    dbhc = prepare_mysql_connection()
+    dbhu = prepare_mysql_connection()
+    chat_thread = Thread(target=start_chat_service, args=[dbhc, portchat])
+    user_thread = Thread(target=start_user_service, args=[dbhu, portuser])
+    chat_thread.start()
+    user_thread.start()
 
 
 if __name__ == '__main__':
